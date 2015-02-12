@@ -128,7 +128,16 @@ Create a container
                      "date"
              ],
              "Entrypoint": "",
+<<<<<<< HEAD
              "Image": "ubuntu",
+=======
+             "Image": "base",
+             "Labels": {
+                     "Vendor": "Acme",
+                     "License": "GPL",
+                     "Version": "1.0"
+             },
+>>>>>>> labels
              "Volumes": {
                      "/tmp": {}
              },
@@ -188,6 +197,7 @@ Json Parameters:
 -   **OpenStdin** - Boolean value, opens stdin,
 -   **StdinOnce** - Boolean value, close stdin after the 1 attached client disconnects.
 -   **Env** - A list of environment variables in the form of `VAR=value`
+-   **Labels** - A list of labels that will applied in the form of `VAR=value`
 -   **Cmd** - Command to run specified as a string or an array of strings.
 -   **Entrypoint** - Set the entrypoint for the container a a string or an array
       of strings
@@ -297,6 +307,11 @@ Return low-level information on the container `id`
 			"ExposedPorts": null,
 			"Hostname": "ba033ac44011",
 			"Image": "ubuntu",
+                        "Labels": {
+                                "Vendor": "Acme",
+                                "License": "GPL",
+                                "Version": "1.0"
+                        },
 			"MacAddress": "",
 			"Memory": 0,
 			"MemorySwap": 0,
@@ -1169,7 +1184,16 @@ Return low-level information on the image `name`
                              "Env": null,
                              "Cmd": ["/bin/bash"],
                              "Dns": null,
+<<<<<<< HEAD
                              "Image": "ubuntu",
+=======
+                             "Image": "base",
+                             "Labels": {
+                                    "Vendor": "Acme",
+                                    "License": "GPL",
+                                    "Version": "1.0"
+                             },
+>>>>>>> labels
                              "Volumes": null,
                              "VolumesFrom": "",
                              "WorkingDir": ""
