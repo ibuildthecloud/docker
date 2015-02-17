@@ -746,6 +746,8 @@ Creates a new container.
       --ipc=""                   Default is to create a private IPC namespace (POSIX SysV IPC) for the container
                                    'container:<name|id>': reuses another container shared memory, semaphores and message queues
                                    'host': use the host shared memory,semaphores and message queues inside the container.  Note: the host mode gives the container full access to local shared memory and is therefore considered insecure.
+      -l, --label=[]             Set meta data on the container (e.g., --label=com.example.key=value)
+      --label-file=[]            Read in a line delimited file of labels
       --link=[]                  Add link to another container in the form of <name or id>:alias
       --lxc-conf=[]              (lxc exec-driver only) Add custom lxc options --lxc-conf="lxc.cgroup.cpuset.cpus = 0,1"
       -m, --memory=""            Memory limit (format: <number><optional unit>, where unit = b, k, m or g)
@@ -1102,6 +1104,7 @@ than one filter, then pass multiple flags (e.g., `--filter "foo=bar" --filter "b
 
 Current filters:
  * dangling (boolean - true or false)
+ * label (`label=<key>` or `label=<key>=<value>`)
 
 ##### Untagged images
 
@@ -1424,8 +1427,8 @@ The `docker rename` command allows the container to be renamed to a different na
       --before=""           Show only container created before Id or Name, include non-running ones.
       -f, --filter=[]       Provide filter values. Valid filters:
                               exited=<int> - containers with exit code of <int>
-                              status=(restarting|running|paused|exited)
                               label=<key> or label=<key>=<value>
+                              status=(restarting|running|paused|exited)
       -l, --latest=false    Show only the latest created container, include non-running ones.
       -n=-1                 Show n last created containers, include non-running ones.
       --no-trunc=false      Don't truncate output
@@ -1613,8 +1616,8 @@ removed before the image is removed.
       --ipc=""                   Default is to create a private IPC namespace (POSIX SysV IPC) for the container
                                    'container:<name|id>': reuses another container shared memory, semaphores and message queues
                                    'host': use the host shared memory,semaphores and message queues inside the container.  Note: the host mode gives the container full access to local shared memory and is therefore considered insecure.
-      -l, --label=[]             Set meta data on a container, for example com.example.key=value
-      -label-file=[]             Read in a line delimited file of labels
+      -l, --label=[]             Set meta data on the container (e.g., --label=com.example.key=value)
+      --label-file=[]            Read in a line delimited file of labels
       --link=[]                  Add link to another container in the form of name:alias
       --lxc-conf=[]              (lxc exec-driver only) Add custom lxc options --lxc-conf="lxc.cgroup.cpuset.cpus = 0,1"
       -m, --memory=""            Memory limit (format: <number><optional unit>, where unit = b, k, m or g)
@@ -1782,6 +1785,36 @@ An example of a file passed with `--env-file`
 
 This will create and run a new container with the container name being
 `console`.
+
+    $ sudo docker run -l my-label --env com.example.foo=bar ubuntu bash
+
+This sets two labels on the container. Label "my-label" doesn't have a value
+specified and will default to "" (empty string) for its value. Both `-l` and 
+`--env` can be repeated to add more labels. Label names are unique; if the same 
+label is specified multiple times, latter values overwrite the previous value.
+
+Labels can also be loaded from a line delimited file of labels using the 
+`--label-file` flag. The example below will load labels from a file named `labels`
+in the current directory;
+
+    $ sudo docker run --env-file ./labels ubuntu bash
+
+The format of the labels-file is similar to that used for loading environment
+variables (see `--env-file` above). An example of a file passed with `--env-file`;
+
+    $ cat ./labels
+    com.example.label1="a label"
+
+    # this is a comment
+    com.example.label2=another\ label
+    com.example.label3
+
+Multiple label-files can be loaded by providing the `--label-file` multiple 
+times.
+
+For additional information on working with labels, see 
+[*Labels - custom meta-data in Docker*](/userguide/labels-custom-metadata/) in
+the user guide.
 
     $ sudo docker run --link /redis:redis --name console ubuntu bash
 
