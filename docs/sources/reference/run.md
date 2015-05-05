@@ -177,6 +177,19 @@ within the container.
 This command would allow you to use `strace` inside the container on pid 1234 on
 the host.
 
+## UTS settings (--uts)
+    --uts=""  : Set the UTS Namespace mode for the container,
+           'host': use the host's UTS namespace inside the container
+
+The UTS namespace is for setting the hostname and the domain that is visible
+to running processes in that namespace.  By default, all containers, including
+those with `--net=host` have their own UTS namespace.  The `host` setting will
+allow the container to use the same UTS namespace as the host.
+
+You may wish to share the UTS namespace with the host if you would like the
+hostname of the container to change as the hostname of the host changes.  A
+more advanced use case would be changing the host's hostname from a container.
+
 ## IPC settings (--ipc)
 
     --ipc=""  : Set the IPC mode for the container,
