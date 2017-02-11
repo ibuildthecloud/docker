@@ -233,6 +233,9 @@ func (n *networkNamespace) NeighborOptions() NeighborOptionSetter {
 }
 
 func mountNetworkNamespace(basePath string, lnPath string) error {
+	if strings.HasPrefix(lnPath, "/var/run") {
+		lnPath = strings.Replace(lnPath, "/var/run", "/run", 1)
+	}
 	return syscall.Mount(basePath, lnPath, "bind", syscall.MS_BIND, "")
 }
 

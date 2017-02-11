@@ -52,12 +52,6 @@ func DefaultSpec() specs.Spec {
 			Source:      "cgroup",
 			Options:     []string{"ro", "nosuid", "noexec", "nodev"},
 		},
-		{
-			Destination: "/dev/mqueue",
-			Type:        "mqueue",
-			Source:      "mqueue",
-			Options:     []string{"nosuid", "noexec", "nodev"},
-		},
 	}
 	s.Process.Capabilities = []string{
 		"CAP_CHOWN",

@@ -205,29 +205,25 @@ func checkCgroupBlkioInfo(cgMounts map[string]string, quiet bool) cgroupBlkioInf
 
 // checkCgroupCpusetInfo reads the cpuset information from the cpuset cgroup mount point.
 func checkCgroupCpusetInfo(cgMounts map[string]string, quiet bool) cgroupCpusetInfo {
-	mountPoint, ok := cgMounts["cpuset"]
-	if !ok {
-		if !quiet {
-			logrus.Warn("Unable to find cpuset cgroup in mounts")
-		}
-		return cgroupCpusetInfo{}
-	}
+	//mountPoint, ok := cgMounts["cpuset"]
+	//if !ok {
+	//	if !quiet {
+	//		logrus.Warn("Unable to find cpuset cgroup in mounts")
+	//	}
+	//	return cgroupCpusetInfo{}
+	//}
 
-	cpus, err := ioutil.ReadFile(path.Join(mountPoint, "cpuset.cpus"))
-	if err != nil {
-		return cgroupCpusetInfo{}
-	}
+	//cpus, err := ioutil.ReadFile(path.Join(mountPoint, "cpuset.cpus"))
+	//if err != nil {
+	//	return cgroupCpusetInfo{}
+	//}
 
-	mems, err := ioutil.ReadFile(path.Join(mountPoint, "cpuset.mems"))
-	if err != nil {
-		return cgroupCpusetInfo{}
-	}
+	//mems, err := ioutil.ReadFile(path.Join(mountPoint, "cpuset.mems"))
+	//if err != nil {
+	//	return cgroupCpusetInfo{}
+	//}
 
-	return cgroupCpusetInfo{
-		Cpuset: true,
-		Cpus:   strings.TrimSpace(string(cpus)),
-		Mems:   strings.TrimSpace(string(mems)),
-	}
+	return cgroupCpusetInfo{}
 }
 
 // checkCgroupPids reads the pids information from the pids cgroup mount point.
