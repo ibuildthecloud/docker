@@ -5,14 +5,12 @@ package container // import "github.com/docker/docker/container"
 import (
 	"io/ioutil"
 	"os"
-	"path/filepath"
 	"syscall"
 
 	"github.com/containerd/continuity/fs"
 	"github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
 	mounttypes "github.com/docker/docker/api/types/mount"
-	swarmtypes "github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/pkg/stringid"
 	"github.com/docker/docker/volume"
 	volumemounts "github.com/docker/docker/volume/mounts"
@@ -218,54 +216,6 @@ func (container *Container) IpcMounts() []Mount {
 	return mounts
 }
 
-// SecretMounts returns the mounts for the secret path.
-func (container *Container) SecretMounts() ([]Mount, error) {
-	var mounts []Mount
-	for _, r := range container.SecretReferences {
-		if r.File == nil {
-			continue
-		}
-		src, err := container.SecretFilePath(*r)
-		if err != nil {
-			return nil, err
-		}
-		mounts = append(mounts, Mount{
-			Source:      src,
-			Destination: getSecretTargetPath(r),
-			Writable:    false,
-		})
-	}
-	for _, r := range container.ConfigReferences {
-		fPath, err := container.ConfigFilePath(*r)
-		if err != nil {
-			return nil, err
-		}
-		mounts = append(mounts, Mount{
-			Source:      fPath,
-			Destination: r.File.Name,
-			Writable:    false,
-		})
-	}
-
-	return mounts, nil
-}
-
-// UnmountSecrets unmounts the local tmpfs for secrets
-func (container *Container) UnmountSecrets() error {
-	p, err := container.SecretMountPath()
-	if err != nil {
-		return err
-	}
-	if _, err := os.Stat(p); err != nil {
-		if os.IsNotExist(err) {
-			return nil
-		}
-		return err
-	}
-
-	return mount.RecursiveUnmount(p)
-}
-
 type conflictingUpdateOptions string
 
 func (e conflictingUpdateOptions) Error() string {
@@ -459,14 +409,4 @@ func (container *Container) GetMountPoints() []types.MountPoint {
 		})
 	}
 	return mountPoints
-}
-
-// ConfigFilePath returns the path to the on-disk location of a config.
-// On unix, configs are always considered secret
-func (container *Container) ConfigFilePath(configRef swarmtypes.ConfigReference) (string, error) {
-	mounts, err := container.SecretMountPath()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(mounts, configRef.ConfigID), nil
 }

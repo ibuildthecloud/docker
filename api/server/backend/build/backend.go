@@ -2,7 +2,6 @@ package build // import "github.com/docker/docker/api/server/backend/build"
 
 import (
 	"context"
-	"fmt"
 	"strconv"
 
 	"github.com/docker/distribution/reference"
@@ -13,7 +12,6 @@ import (
 	buildkit "github.com/docker/docker/builder/builder-next"
 	daemonevents "github.com/docker/docker/daemon/events"
 	"github.com/docker/docker/image"
-	"github.com/docker/docker/pkg/stringid"
 	"github.com/pkg/errors"
 	"google.golang.org/grpc"
 )
@@ -24,22 +22,16 @@ type ImageComponent interface {
 	TagImageWithReference(image.ID, reference.Named) error
 }
 
-// Builder defines interface for running a build
-type Builder interface {
-	Build(context.Context, backend.BuildConfig) (*builder.Result, error)
-}
-
 // Backend provides build functionality to the API router
 type Backend struct {
-	builder        Builder
 	imageComponent ImageComponent
 	buildkit       *buildkit.Builder
 	eventsService  *daemonevents.Events
 }
 
 // NewBackend creates a new build backend from components
-func NewBackend(components ImageComponent, builder Builder, buildkit *buildkit.Builder, es *daemonevents.Events) (*Backend, error) {
-	return &Backend{imageComponent: components, builder: builder, buildkit: buildkit, eventsService: es}, nil
+func NewBackend(components ImageComponent, buildkit *buildkit.Builder, es *daemonevents.Events) (*Backend, error) {
+	return &Backend{imageComponent: components, buildkit: buildkit, eventsService: es}, nil
 }
 
 // RegisterGRPC registers buildkit controller to the grpc server.
@@ -52,7 +44,6 @@ func (b *Backend) RegisterGRPC(s *grpc.Server) {
 // Build builds an image from a Source
 func (b *Backend) Build(ctx context.Context, config backend.BuildConfig) (string, error) {
 	options := config.Options
-	useBuildKit := options.Version == types.BuilderBuildKit
 
 	tagger, err := NewTagger(b.imageComponent, config.ProgressWriter.StdoutFormatter, options.Tags)
 	if err != nil {
@@ -60,16 +51,9 @@ func (b *Backend) Build(ctx context.Context, config backend.BuildConfig) (string
 	}
 
 	var build *builder.Result
-	if useBuildKit {
-		build, err = b.buildkit.Build(ctx, config)
-		if err != nil {
-			return "", err
-		}
-	} else {
-		build, err = b.builder.Build(ctx, config)
-		if err != nil {
-			return "", err
-		}
+	build, err = b.buildkit.Build(ctx, config)
+	if err != nil {
+		return "", err
 	}
 
 	if build == nil {
@@ -88,10 +72,6 @@ func (b *Backend) Build(ctx context.Context, config backend.BuildConfig) (string
 		}
 	}
 
-	if !useBuildKit {
-		stdout := config.ProgressWriter.StdoutFormatter
-		fmt.Fprintf(stdout, "Successfully built %s\n", stringid.TruncateID(imageID))
-	}
 	if imageID != "" {
 		err = tagger.TagImages(image.ID(imageID))
 	}

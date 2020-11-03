@@ -15,13 +15,8 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"sync"
 	"time"
-
-	"github.com/docker/docker/pkg/fileutils"
-	"google.golang.org/grpc"
-	"google.golang.org/grpc/backoff"
 
 	"github.com/containerd/containerd"
 	"github.com/containerd/containerd/defaults"
@@ -30,20 +25,21 @@ import (
 	"github.com/containerd/containerd/sys"
 	"github.com/docker/docker/api/types"
 	containertypes "github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/builder"
 	"github.com/docker/docker/container"
 	"github.com/docker/docker/daemon/config"
-	"github.com/docker/docker/daemon/discovery"
 	"github.com/docker/docker/daemon/events"
 	"github.com/docker/docker/daemon/exec"
 	"github.com/docker/docker/daemon/images"
 	"github.com/docker/docker/daemon/logger"
 	"github.com/docker/docker/daemon/network"
 	"github.com/docker/docker/errdefs"
+	"github.com/docker/docker/pkg/fileutils"
 	bkconfig "github.com/moby/buildkit/cmd/buildkitd/config"
 	"github.com/moby/buildkit/util/resolver"
 	"github.com/sirupsen/logrus"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/backoff"
 
 	// register graph drivers
 	_ "github.com/docker/docker/daemon/graphdriver/register"
@@ -97,7 +93,6 @@ type Daemon struct {
 	EventsService     *events.Events
 	netController     libnetwork.NetworkController
 	volumes           *volumesservice.VolumesService
-	discoveryWatcher  discovery.Reloader
 	root              string
 	seccompEnabled    bool
 	apparmorEnabled   bool
@@ -114,7 +109,6 @@ type Daemon struct {
 	defaultIsolation      containertypes.Isolation // Default isolation mode on Windows
 	clusterProvider       cluster.Provider
 	cluster               Cluster
-	genericResources      []swarm.GenericResource
 	metricsPluginListener net.Listener
 
 	machineMemory uint64
@@ -500,8 +494,6 @@ func (daemon *Daemon) restore() error {
 				}
 			}
 
-			// Make sure networks are available before starting
-			daemon.waitForNetworks(c)
 			if err := daemon.containerStart(c, "", "", true); err != nil {
 				logrus.Errorf("Failed to start container %s: %s", c.ID, err)
 			}
@@ -606,40 +598,6 @@ func (daemon *Daemon) RestartSwarmContainers() {
 	group.Wait()
 }
 
-// waitForNetworks is used during daemon initialization when starting up containers
-// It ensures that all of a container's networks are available before the daemon tries to start the container.
-// In practice it just makes sure the discovery service is available for containers which use a network that require discovery.
-func (daemon *Daemon) waitForNetworks(c *container.Container) {
-	if daemon.discoveryWatcher == nil {
-		return
-	}
-
-	// Make sure if the container has a network that requires discovery that the discovery service is available before starting
-	for netName := range c.NetworkSettings.Networks {
-		// If we get `ErrNoSuchNetwork` here, we can assume that it is due to discovery not being ready
-		// Most likely this is because the K/V store used for discovery is in a container and needs to be started
-		if _, err := daemon.netController.NetworkByName(netName); err != nil {
-			if _, ok := err.(libnetwork.ErrNoSuchNetwork); !ok {
-				continue
-			}
-
-			// use a longish timeout here due to some slowdowns in libnetwork if the k/v store is on anything other than --net=host
-			// FIXME: why is this slow???
-			dur := 60 * time.Second
-			timer := time.NewTimer(dur)
-
-			logrus.Debugf("Container %s waiting for network to be ready", c.Name)
-			select {
-			case <-daemon.discoveryWatcher.ReadyCh():
-			case <-timer.C:
-			}
-			timer.Stop()
-
-			return
-		}
-	}
-}
-
 func (daemon *Daemon) children(c *container.Container) map[string]*container.Container {
 	return daemon.linkIndex.children(c)
 }
@@ -685,19 +643,6 @@ func (daemon *Daemon) DaemonLeavesCluster() {
 	// wait, because the ingress release has to happen before the
 	// network controller is stopped.
 
-	if done, err := daemon.ReleaseIngress(); err == nil {
-		timeout := time.NewTimer(5 * time.Second)
-		defer timeout.Stop()
-
-		select {
-		case <-done:
-		case <-timeout.C:
-			logrus.Warn("timeout while waiting for ingress network removal")
-		}
-	} else {
-		logrus.Warnf("failed to initiate ingress network removal: %v", err)
-	}
-
 	daemon.attachmentStore.ClearAttachments()
 }
 
@@ -706,15 +651,6 @@ func (daemon *Daemon) setClusterProvider(clusterProvider cluster.Provider) {
 	daemon.clusterProvider = clusterProvider
 	daemon.netController.SetClusterProvider(clusterProvider)
 	daemon.attachableNetworkLock = locker.New()
-}
-
-// IsSwarmCompatible verifies if the current daemon
-// configuration is compatible with the swarm mode
-func (daemon *Daemon) IsSwarmCompatible() error {
-	if daemon.configStore == nil {
-		return nil
-	}
-	return daemon.configStore.IsSwarmCompatible()
 }
 
 // NewDaemon sets up everything for the daemon to be able to service
@@ -799,9 +735,6 @@ func NewDaemon(ctx context.Context, config *config.Config, pluginStore *plugin.S
 		}
 	}()
 
-	if err := d.setGenericResources(config); err != nil {
-		return nil, err
-	}
 	// set up SIGUSR1 handler on Unix-like systems, or a Win32 global event
 	// on Windows to dump Go routine stacks
 	stackDumpDir := config.Root
@@ -1032,12 +965,6 @@ func NewDaemon(ctx context.Context, config *config.Config, pluginStore *plugin.S
 
 	distributionMetadataStore, err := dmetadata.NewFSMetadataStore(filepath.Join(imageRoot, "distribution"))
 	if err != nil {
-		return nil, err
-	}
-
-	// Discovery is only enabled when the daemon is launched with an address to advertise.  When
-	// initialized, the daemon is registered and we can store the discovery backend as it's read-only
-	if err := d.initDiscovery(config); err != nil {
 		return nil, err
 	}
 
@@ -1338,17 +1265,6 @@ func prepareTempDir(rootDir string, rootIdentity idtools.Identity) (string, erro
 	return tmpDir, idtools.MkdirAllAndChown(tmpDir, 0700, rootIdentity)
 }
 
-func (daemon *Daemon) setGenericResources(conf *config.Config) error {
-	genericResources, err := config.ParseGenericResources(conf.NodeGenericResources)
-	if err != nil {
-		return err
-	}
-
-	daemon.genericResources = genericResources
-
-	return nil
-}
-
 func setDefaultMtu(conf *config.Config) {
 	// do nothing if the config does not have the default 0 value.
 	if conf.Mtu != 0 {
@@ -1360,26 +1276,6 @@ func setDefaultMtu(conf *config.Config) {
 // IsShuttingDown tells whether the daemon is shutting down or not
 func (daemon *Daemon) IsShuttingDown() bool {
 	return daemon.shutdown
-}
-
-// initDiscovery initializes the discovery watcher for this daemon.
-func (daemon *Daemon) initDiscovery(conf *config.Config) error {
-	advertise, err := config.ParseClusterAdvertiseSettings(conf.ClusterStore, conf.ClusterAdvertise)
-	if err != nil {
-		if err == discovery.ErrDiscoveryDisabled {
-			return nil
-		}
-		return err
-	}
-
-	conf.ClusterAdvertise = advertise
-	discoveryWatcher, err := discovery.Init(conf.ClusterStore, conf.ClusterAdvertise, conf.ClusterOpts)
-	if err != nil {
-		return fmt.Errorf("discovery initialization failed (%v)", err)
-	}
-
-	daemon.discoveryWatcher = discoveryWatcher
-	return nil
 }
 
 func isBridgeNetworkDisabled(conf *config.Config) bool {
@@ -1400,26 +1296,6 @@ func (daemon *Daemon) networkOptions(dconfig *config.Config, pg plugingetter.Plu
 	dn := runconfig.DefaultDaemonNetworkMode().NetworkName()
 	options = append(options, nwconfig.OptionDefaultDriver(string(dd)))
 	options = append(options, nwconfig.OptionDefaultNetwork(dn))
-
-	if strings.TrimSpace(dconfig.ClusterStore) != "" {
-		kv := strings.Split(dconfig.ClusterStore, "://")
-		if len(kv) != 2 {
-			return nil, errors.New("kv store daemon config must be of the form KV-PROVIDER://KV-URL")
-		}
-		options = append(options, nwconfig.OptionKVProvider(kv[0]))
-		options = append(options, nwconfig.OptionKVProviderURL(kv[1]))
-	}
-	if len(dconfig.ClusterOpts) > 0 {
-		options = append(options, nwconfig.OptionKVOpts(dconfig.ClusterOpts))
-	}
-
-	if daemon.discoveryWatcher != nil {
-		options = append(options, nwconfig.OptionDiscoveryWatcher(daemon.discoveryWatcher))
-	}
-
-	if dconfig.ClusterAdvertise != "" {
-		options = append(options, nwconfig.OptionDiscoveryAddress(dconfig.ClusterAdvertise))
-	}
 
 	options = append(options, nwconfig.OptionLabels(dconfig.Labels))
 	options = append(options, driverOptions(dconfig)...)

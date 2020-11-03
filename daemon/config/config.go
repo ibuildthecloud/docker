@@ -8,14 +8,11 @@ import (
 	"io/ioutil"
 	"net"
 	"os"
-	"reflect"
 	"strings"
 	"sync"
 
-	daemondiscovery "github.com/docker/docker/daemon/discovery"
 	"github.com/docker/docker/opts"
 	"github.com/docker/docker/pkg/authorization"
-	"github.com/docker/docker/pkg/discovery"
 	"github.com/docker/docker/registry"
 	"github.com/imdario/mergo"
 	"github.com/pkg/errors"
@@ -169,23 +166,6 @@ type CommonConfig struct {
 	// alive upon daemon shutdown/start
 	LiveRestoreEnabled bool `json:"live-restore,omitempty"`
 
-	// ClusterStore is the storage backend used for the cluster information. It is used by both
-	// multihost networking (to store networks and endpoints information) and by the node discovery
-	// mechanism.
-	// Deprecated: host-discovery and overlay networks with external k/v stores are deprecated
-	ClusterStore string `json:"cluster-store,omitempty"`
-
-	// ClusterOpts is used to pass options to the discovery package for tuning libkv settings, such
-	// as TLS configuration settings.
-	// Deprecated: host-discovery and overlay networks with external k/v stores are deprecated
-	ClusterOpts map[string]string `json:"cluster-store-opts,omitempty"`
-
-	// ClusterAdvertise is the network endpoint that the Engine advertises for the purpose of node
-	// discovery. This should be a 'host:port' combination on which that daemon instance is
-	// reachable by other hosts.
-	// Deprecated: host-discovery and overlay networks with external k/v stores are deprecated
-	ClusterAdvertise string `json:"cluster-advertise,omitempty"`
-
 	// MaxConcurrentDownloads is the maximum number of downloads that
 	// may take place at a time for each pull.
 	MaxConcurrentDownloads *int `json:"max-concurrent-downloads,omitempty"`
@@ -211,22 +191,6 @@ type CommonConfig struct {
 	// Embedded structs that allow config
 	// deserialization without the full struct.
 	CommonTLSOptions
-
-	// SwarmDefaultAdvertiseAddr is the default host/IP or network interface
-	// to use if a wildcard address is specified in the ListenAddr value
-	// given to the /swarm/init endpoint and no advertise address is
-	// specified.
-	SwarmDefaultAdvertiseAddr string `json:"swarm-default-advertise-addr"`
-
-	// SwarmRaftHeartbeatTick is the number of ticks in time for swarm mode raft quorum heartbeat
-	// Typical value is 1
-	SwarmRaftHeartbeatTick uint32 `json:"swarm-raft-heartbeat-tick"`
-
-	// SwarmRaftElectionTick is the number of ticks to elapse before followers in the quorum can propose
-	// a new round of leader election.  Default, recommended value is at least 10X that of Heartbeat tick.
-	// Higher values can make the quorum less sensitive to transient faults in the environment, but this also
-	// means it takes longer for the managers to detect a down leader.
-	SwarmRaftElectionTick uint32 `json:"swarm-raft-election-tick"`
 
 	MetricsAddress string `json:"metrics-addr"`
 
@@ -280,24 +244,7 @@ func (conf *Config) IsValueSet(name string) bool {
 func New() *Config {
 	config := Config{}
 	config.LogConfig.Config = make(map[string]string)
-	config.ClusterOpts = make(map[string]string)
 	return &config
-}
-
-// ParseClusterAdvertiseSettings parses the specified advertise settings
-func ParseClusterAdvertiseSettings(clusterStore, clusterAdvertise string) (string, error) {
-	if clusterAdvertise == "" {
-		return "", daemondiscovery.ErrDiscoveryDisabled
-	}
-	if clusterStore == "" {
-		return "", errors.New("invalid cluster configuration. --cluster-advertise must be accompanied by --cluster-store configuration")
-	}
-
-	advertise, err := discovery.ParseAdvertise(clusterAdvertise)
-	if err != nil {
-		return "", errors.Wrap(err, "discovery advertise parsing failed")
-	}
-	return advertise, nil
 }
 
 // GetConflictFreeLabels validates Labels for conflict
@@ -580,10 +527,6 @@ func Validate(config *Config) error {
 		}
 	}
 
-	if _, err := ParseGenericResources(config.NodeGenericResources); err != nil {
-		return err
-	}
-
 	if defaultRuntime := config.GetDefaultRuntimeName(); defaultRuntime != "" {
 		if !builtinRuntimes[defaultRuntime] {
 			runtimes := config.GetAllRuntimes()
@@ -603,19 +546,4 @@ func ValidateMaxDownloadAttempts(config *Config) error {
 		return fmt.Errorf("invalid max download attempts: %d", *config.MaxDownloadAttempts)
 	}
 	return nil
-}
-
-// ModifiedDiscoverySettings returns whether the discovery configuration has been modified or not.
-func ModifiedDiscoverySettings(config *Config, backendType, advertise string, clusterOpts map[string]string) bool {
-	if config.ClusterStore != backendType || config.ClusterAdvertise != advertise {
-		return true
-	}
-
-	if (config.ClusterOpts == nil && clusterOpts == nil) ||
-		(config.ClusterOpts == nil && len(clusterOpts) == 0) ||
-		(len(config.ClusterOpts) == 0 && clusterOpts == nil) {
-		return false
-	}
-
-	return !reflect.DeepEqual(config.ClusterOpts, clusterOpts)
 }

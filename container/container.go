@@ -17,7 +17,6 @@ import (
 	"github.com/containerd/containerd/cio"
 	containertypes "github.com/docker/docker/api/types/container"
 	mounttypes "github.com/docker/docker/api/types/mount"
-	swarmtypes "github.com/docker/docker/api/types/swarm"
 	"github.com/docker/docker/container/stream"
 	"github.com/docker/docker/daemon/exec"
 	"github.com/docker/docker/daemon/logger"
@@ -38,7 +37,6 @@ import (
 	"github.com/docker/docker/volume"
 	volumemounts "github.com/docker/docker/volume/mounts"
 	units "github.com/docker/go-units"
-	agentexec "github.com/docker/swarmkit/agent/exec"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 )
@@ -86,9 +84,6 @@ type Container struct {
 	MountPoints            map[string]*volumemounts.MountPoint
 	HostConfig             *containertypes.HostConfig `json:"-"` // do not serialize the host config in the json, otherwise we'll make the container unportable
 	ExecCommands           *exec.Store                `json:"-"`
-	DependencyStore        agentexec.DependencyGetter `json:"-"`
-	SecretReferences       []*swarmtypes.SecretReference
-	ConfigReferences       []*swarmtypes.ConfigReference
 	// logDriver for closing
 	LogDriver      logger.Logger  `json:"-"`
 	LogCopier      *logger.Copier `json:"-"`
@@ -697,23 +692,6 @@ func (container *Container) MountsResourcePath(mount string) (string, error) {
 // SecretMountPath returns the path of the secret mount for the container
 func (container *Container) SecretMountPath() (string, error) {
 	return container.MountsResourcePath("secrets")
-}
-
-// SecretFilePath returns the path to the location of a secret on the host.
-func (container *Container) SecretFilePath(secretRef swarmtypes.SecretReference) (string, error) {
-	secrets, err := container.SecretMountPath()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(secrets, secretRef.SecretID), nil
-}
-
-func getSecretTargetPath(r *swarmtypes.SecretReference) string {
-	if filepath.IsAbs(r.File.Name) {
-		return r.File.Name
-	}
-
-	return filepath.Join(containerSecretMountPath, r.File.Name)
 }
 
 // CreateDaemonEnvironment creates a new environment variable slice for this container.

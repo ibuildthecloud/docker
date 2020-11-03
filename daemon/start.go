@@ -249,10 +249,6 @@ func (daemon *Daemon) Cleanup(container *container.Container) {
 		}
 	}
 
-	if err := container.UnmountSecrets(); err != nil {
-		logrus.Warnf("%s cleanup: failed to unmount secrets: %s", container.ID, err)
-	}
-
 	if err := mount.RecursiveUnmount(container.Root); err != nil {
 		logrus.WithError(err).WithField("container", container.ID).Warn("Error while cleaning up container resource mounts.")
 	}

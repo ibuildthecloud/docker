@@ -14,7 +14,6 @@ import (
 	"github.com/docker/docker/api/types/backend"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/builder"
-	"github.com/docker/docker/builder/remotecontext"
 	"github.com/docker/docker/errdefs"
 	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/streamformatter"
@@ -26,7 +25,6 @@ import (
 	specs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
-	"golang.org/x/sync/syncmap"
 )
 
 var validCommitCommands = map[string]bool{
@@ -45,63 +43,6 @@ var validCommitCommands = map[string]bool{
 const (
 	stepFormat = "Step %d/%d : %v"
 )
-
-// BuildManager is shared across all Builder objects
-type BuildManager struct {
-	idMapping *idtools.IdentityMapping
-	backend   builder.Backend
-	pathCache pathCache // TODO: make this persistent
-}
-
-// NewBuildManager creates a BuildManager
-func NewBuildManager(b builder.Backend, identityMapping *idtools.IdentityMapping) (*BuildManager, error) {
-	bm := &BuildManager{
-		backend:   b,
-		pathCache: &syncmap.Map{},
-		idMapping: identityMapping,
-	}
-	return bm, nil
-}
-
-// Build starts a new build from a BuildConfig
-func (bm *BuildManager) Build(ctx context.Context, config backend.BuildConfig) (*builder.Result, error) {
-	buildsTriggered.Inc()
-	if config.Options.Dockerfile == "" {
-		config.Options.Dockerfile = builder.DefaultDockerfileName
-	}
-
-	source, dockerfile, err := remotecontext.Detect(config)
-	if err != nil {
-		return nil, err
-	}
-	defer func() {
-		if source != nil {
-			if err := source.Close(); err != nil {
-				logrus.Debugf("[BUILDER] failed to remove temporary context: %v", err)
-			}
-		}
-	}()
-
-	ctx, cancel := context.WithCancel(ctx)
-	defer cancel()
-
-	if config.Options.SessionID != "" {
-		return nil, errors.New("experimental session with v1 builder is no longer supported, use builder version v2 (BuildKit) instead")
-	}
-
-	builderOptions := builderOptions{
-		Options:        config.Options,
-		ProgressWriter: config.ProgressWriter,
-		Backend:        bm.backend,
-		PathCache:      bm.pathCache,
-		IDMapping:      bm.idMapping,
-	}
-	b, err := newBuilder(ctx, builderOptions)
-	if err != nil {
-		return nil, err
-	}
-	return b.build(source, dockerfile)
-}
 
 // builderOptions are the dependencies required by the builder
 type builderOptions struct {
